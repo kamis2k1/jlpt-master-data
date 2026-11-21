@@ -1,0 +1,29 @@
+name: Publish packs
+on:
+  push:
+    branches: [upload]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Join parts and check
+        run: |
+          mkdir out
+          for n in $(jq -r '.packs[].name' packs.json); do
+            cat parts/$n.* > out/$n
+            want=$(jq -r --arg n "$n" '.packs[]|select(.name==$n)|.sha256' packs.json)
+            got=$(sha256sum out/$n | cut -d' ' -f1)
+            [ "$want" = "$got" ] || { echo "sha mismatch $n"; exit 1; }
+          done
+          cp packs.json out/
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=$(jq -r .version packs.json)
+          gh release delete "$V" -y --cleanup-tag -R "$GITHUB_REPOSITORY" || true
+          gh release create "$V" out/* -R "$GITHUB_REPOSITORY" --title "Gói tài liệu $V" --notes "Gói tài liệu cho app JLPT Master (N1, N2, N3)." --latest

@@ -1,0 +1,104 @@
+{
+ "version": "v1",
+ "packs": [
+  {
+   "name": "N3-books.zip",
+   "level": "N3",
+   "kind": "books",
+   "title": "N3 – sách và bài test",
+   "size": 226607021,
+   "sha256": "c0e3cfe027e4702a68283b31bedf8b3ff6d81af2c3191c08e7a186353027aff4",
+   "url": "https://github.com/kamis2k1/jlpt-master-data/releases/download/v1/N3-books.zip",
+   "ver": "v1",
+   "files": 107
+  },
+  {
+   "name": "N3-exams.zip",
+   "level": "N3",
+   "kind": "exams",
+   "title": "N3 – đề thi các năm (PDF)",
+   "size": 109991790,
+   "sha256": "aeddebbdc1a22af6092ceeddeef2dc7922afe07cfe4bd99bc28341b3bca7d969",
+   "url": "https://github.com/kamis2k1/jlpt-master-data/releases/download/v1/N3-exams.zip",
+   "ver": "v1",
+   "files": 51
+  },
+  {
+   "name": "N3-audio.zip",
+   "level": "N3",
+   "kind": "audio",
+   "title": "N3 – file nghe",
+   "size": 486476403,
+   "sha256": "43d469f7c8522fcfb7df28dd4cf0baaf690d27006e3aeff84a3ce79793821111",
+   "url": "https://github.com/kamis2k1/jlpt-master-data/releases/download/v1/N3-audio.zip",
+   "ver": "v1",
+   "files": 151
+  },
+  {
+   "name": "N2-books.zip",
+   "level": "N2",
+   "kind": "books",
+   "title": "N2 – sách và bài test",
+   "size": 224490762,
+   "sha256": "84d36ae48402cc774cd03594098c8b4d7294362be485ae990a87064cfaa9914d",
+   "url": "https://github.com/kamis2k1/jlpt-master-data/releases/download/v1/N2-books.zip",
+   "ver": "v1",
+   "files": 124
+  },
+  {
+   "name": "N2-exams.zip",
+   "level": "N2",
+   "kind": "exams",
+   "title": "N2 – đề thi các năm (PDF)",
+   "size": 125285072,
+   "sha256": "d2f94b20f791cd7532043fb50204f17c2f7c052655f094d427651d384f95f81a",
+   "url": "https://github.com/kamis2k1/jlpt-master-data/releases/download/v1/N2-exams.zip",
+   "ver": "v1",
+   "files": 53
+  },
+  {
+   "name": "N2-audio.zip",
+   "level": "N2",
+   "kind": "audio",
+   "title": "N2 – file nghe",
+   "size": 607701753,
+   "sha256": "7176f6ae5f385aed3d1a99c96e3815b2d7565d24de0c1c7de6e58eff5b401936",
+   "url": "https://github.com/kamis2k1/jlpt-master-data/releases/download/v1/N2-audio.zip",
+   "ver": "v1",
+   "files": 189
+  },
+  {
+   "name": "N1-books.zip",
+   "level": "N1",
+   "kind": "books",
+   "title": "N1 – sách và bài test",
+   "size": 72494341,
+   "sha256": "8059c9baf2514740dd73282884abca60baa4b9b9d579f14d6be95eed689f4320",
+   "url": "https://github.com/kamis2k1/jlpt-master-data/releases/download/v1/N1-books.zip",
+   "ver": "v1",
+   "files": 46
+  },
+  {
+   "name": "N1-exams.zip",
+   "level": "N1",
+   "kind": "exams",
+   "title": "N1 – đề thi các năm (PDF)",
+   "size": 146883989,
+   "sha256": "f992115e347a49f297e60531b9684c413718878438ba2dc9016e4c669f86bcae",
+   "url": "https://github.com/kamis2k1/jlpt-master-data/releases/download/v1/N1-exams.zip",
+   "ver": "v1",
+   "files": 50
+  },
+  {
+   "name": "N1-audio.zip",
+   "level": "N1",
+   "kind": "audio",
+   "title": "N1 – file nghe",
+   "size": 812921914,
+   "sha256": "a1f09e47a56986f3ad40d9dc7b40b6fc8a610099a07c6c48e84dfe374bd450b7",
+   "url": "https://github.com/kamis2k1/jlpt-master-data/releases/download/v1/N1-audio.zip",
+   "ver": "v1",
+   "files": 145
+  }
+ ]
+}
