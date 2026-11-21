@@ -68,6 +68,17 @@
    "files": 189
   },
   {
+   "name": "N2-lisbook.zip",
+   "level": "N2",
+   "kind": "books",
+   "title": "N2 – sách Nghe Shinkanzen (script và đáp án)",
+   "size": 14379205,
+   "sha256": "e83bf2142e9b510facb3b44a56316a4d7e29b4b5aed75e479993fb86bc4575e4",
+   "url": "https://github.com/kamis2k1/jlpt-master-data/releases/download/v1/N2-lisbook.zip",
+   "ver": "v1",
+   "files": 1
+  },
+  {
    "name": "N1-books.zip",
    "level": "N1",
    "kind": "books",
