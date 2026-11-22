@@ -1,5 +1,5 @@
 {
- "version": "v1",
+ "version": "v2",
  "packs": [
   {
    "name": "N3-books.zip",
@@ -28,11 +28,11 @@
    "level": "N3",
    "kind": "audio",
    "title": "N3 – file nghe",
-   "size": 486476403,
-   "sha256": "43d469f7c8522fcfb7df28dd4cf0baaf690d27006e3aeff84a3ce79793821111",
-   "url": "https://github.com/kamis2k1/jlpt-master-data/releases/download/v1/N3-audio.zip",
-   "ver": "v1",
-   "files": 151
+   "size": 509159305,
+   "sha256": "41601025ceaeaf58043fc389ec0555d18e38e9b57b83311c35b87aa2cbb4a976",
+   "url": "https://github.com/kamis2k1/jlpt-master-data/releases/download/v2/N3-audio.zip",
+   "ver": "v2",
+   "files": 158
   },
   {
    "name": "N2-books.zip",

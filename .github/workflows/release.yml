@@ -13,7 +13,8 @@ jobs:
       - name: Join parts and check
         run: |
           mkdir out
-          for n in $(jq -r '.packs[].name' packs.json); do
+          V=$(jq -r .version packs.json)
+          for n in $(jq -r --arg v "$V" '.packs[]|select(.ver==$v)|.name' packs.json); do
             cat parts/$n.* > out/$n
             want=$(jq -r --arg n "$n" '.packs[]|select(.name==$n)|.sha256' packs.json)
             got=$(sha256sum out/$n | cut -d' ' -f1)
