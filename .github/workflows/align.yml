@@ -16,7 +16,7 @@ on:
     inputs:
       model:
         description: faster-whisper model (small / medium)
-        default: medium
+        default: small
       tag:
         description: draft release tag for the result
         default: align-v1
@@ -30,7 +30,7 @@ concurrency:
 
 env:
   PACKS: https://github.com/kamis2k1/jlpt-master-data/releases/download/v3/packs.json
-  MODEL: ${{ inputs.model || 'medium' }}
+  MODEL: ${{ inputs.model || 'small' }}
   TAG: ${{ inputs.tag || 'align-v1' }}
 
 jobs:
