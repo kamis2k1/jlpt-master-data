@@ -1,0 +1,32 @@
+# Publish the encrypted release v3 as "latest" and delete the old plaintext releases v1 and v2.
+# Start it by pushing a change to tools/go-publish (do this together with the app build that reads encrypted packs).
+name: Publish encrypted packs
+
+on:
+  push:
+    branches: [main]
+    paths: ['tools/go-publish']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check v3 is complete
+        run: |
+          set -euo pipefail
+          gh release view v3 -R "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | tee names.txt
+          grep -qx packs.json names.txt || { echo "v3 has no packs.json yet - run repack first"; exit 1; }
+          test "$(grep -c '\.zip$' names.txt)" -ge 10 || { echo "v3 is missing packs"; exit 1; }
+      - name: Publish v3 as latest
+        run: gh release edit v3 -R "$GITHUB_REPOSITORY" --draft=false --latest
+      - name: Delete old plaintext releases v1 and v2
+        run: |
+          for t in v1 v2; do
+            gh release delete "$t" -R "$GITHUB_REPOSITORY" --yes --cleanup-tag || echo "$t already gone"
+          done

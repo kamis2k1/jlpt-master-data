@@ -1,0 +1,91 @@
+# Copy this file to the DATA repo (kamis2k1/jlpt-master-data) as .github/workflows/repack.yml,
+# and copy scripts/repack-encrypt.py from the app repo to tools/repack-encrypt.py in the data repo.
+# Repository secrets needed in the data repo (Settings > Secrets and variables > Actions):
+#   N1_ENC_KEY   64 hex chars (AES-256 key, must equal the key built into the app: EncStore.java / desktop/enc.js)
+#   N1_ENC_SALT  32 hex chars (file-id salt, must equal ENC_SALT in www/index.html)
+# Run it from the Actions tab (workflow_dispatch). It downloads every pack listed in the source packs.json
+# (the plaintext v1/v2 assets), checks its SHA-256, encrypts it (files become jm/<id>, names hidden),
+# uploads it to a DRAFT release with a new packs.json (enc: 1). Publishing is done by publish.yml.
+# Start it by pushing a change to tools/go-repack.
+name: Repack encrypted packs
+
+on:
+  push:
+    branches: [main]
+    paths: ['tools/go-repack']
+  workflow_dispatch:
+    inputs:
+      source:
+        description: packs.json to convert (plaintext packs)
+        default: https://github.com/kamis2k1/jlpt-master-data/releases/download/v2/packs.json
+      tag:
+        description: new release tag
+        default: v3
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repack
+  cancel-in-progress: false
+
+jobs:
+  repack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      GH_TOKEN: ${{ github.token }}
+      N1_ENC_KEY: ${{ secrets.N1_ENC_KEY }}
+      N1_ENC_SALT: ${{ secrets.N1_ENC_SALT }}
+      TAG: ${{ inputs.tag || 'v3' }}
+      SRC: ${{ inputs.source || 'https://github.com/kamis2k1/jlpt-master-data/releases/download/v2/packs.json' }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Check secrets
+        run: |
+          test ${#N1_ENC_KEY} -eq 64 || { echo "secret N1_ENC_KEY missing or not 64 hex chars"; exit 1; }
+          test ${#N1_ENC_SALT} -eq 32 || { echo "secret N1_ENC_SALT missing or not 32 hex chars"; exit 1; }
+          pip install cryptography
+
+      - name: Create draft release
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists - delete it first or choose another tag"; exit 1
+          fi
+          gh release create "$TAG" --draft --title "Tài liệu (mã hoá) $TAG" \
+            --notes "Gói tài liệu cho app JLPT Master. Chỉ dùng được trong app."
+
+      - name: Encrypt and upload every pack
+        run: |
+          set -euo pipefail
+          curl -fsSL "$SRC" -o old-packs.json
+          mkdir -p work out
+          echo '[]' > entries.json
+          base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
+          n=$(jq '.packs | length' old-packs.json)
+          for i in $(seq 0 $((n - 1))); do
+            p=$(jq -c ".packs[$i]" old-packs.json)
+            name=$(jq -r .name <<<"$p"); url=$(jq -r .url <<<"$p"); sha=$(jq -r .sha256 <<<"$p")
+            [[ "$name" =~ ^[A-Za-z0-9._-]+\.zip$ ]] || { echo "bad pack name $name"; exit 1; }
+            echo "::group::$name"
+            curl -fL --retry 5 --retry-delay 10 -o "work/$name" "$url"
+            echo "$sha  work/$name" | sha256sum -c -
+            info=$(python tools/repack-encrypt.py encrypt "work/$name" "out/$name")
+            echo "$info"
+            rm -f "work/$name"
+            gh release upload "$TAG" "out/$name" --clobber
+            rm -f "out/$name"
+            jq --argjson p "$p" --argjson i "$info" --arg url "$base/$name" --arg ver "$TAG" \
+              '. + [$p + $i + {url: $url, ver: $ver, enc: 1}]' entries.json > e.tmp && mv e.tmp entries.json
+            echo "::endgroup::"
+          done
+          jq --arg ver "$TAG" '{version: $ver, enc: 1, packs: .}' entries.json > packs.json
+          cat packs.json
+
+      - name: Upload packs.json (release stays a DRAFT until publish.yml runs)
+        run: gh release upload "$TAG" packs.json --clobber
