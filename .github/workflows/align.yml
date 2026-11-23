@@ -57,7 +57,7 @@ jobs:
         run: |
           test ${#N1_ENC_KEY} -eq 64 || { echo "secret N1_ENC_KEY missing or not 64 hex chars"; exit 1; }
           test ${#N1_ENC_SALT} -eq 32 || { echo "secret N1_ENC_SALT missing or not 32 hex chars"; exit 1; }
-          pip install faster-whisper pykakasi cryptography
+          pip install faster-whisper "av<19" pykakasi cryptography   # av 19 dropped open(metadata_errors=) used by faster-whisper 1.2.1
 
       - uses: actions/cache@v4
         with:
@@ -105,6 +105,8 @@ jobs:
         run: |
           set -euo pipefail
           cat words/*/_shard*.json || true
+          n=$(find words -name '[0-9a-f]*.json' | wc -l); echo "$n transcripts"
+          test "$n" -gt 0 || { echo "no transcripts - every transcribe job failed"; exit 1; }
           python tools/align/align.py build tools/align/items.json words shadow_jlpt.js align-stats.json
           node -e "global.window={};require('./shadow_jlpt.js');const S=window.SHADOW_JLPT;console.log(Object.keys(S).map(l=>l+':'+Object.keys(S[l]).length).join(' '))"
           ls -la shadow_jlpt.js
