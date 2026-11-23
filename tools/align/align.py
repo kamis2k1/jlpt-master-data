@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Align JLPT listening scripts to faster-whisper word timestamps (sentence level).
 
-  align.py build ITEMS.json WORDS_DIR OUT.js [STATS.json]
+  align.py build ITEMS.json WORDS_DIR OUT.js [STATS.json [META.json]]
       WORDS_DIR holds <LEVEL>/<id>.json files written by transcribe.py:
         {"path": item.path, "duration": sec, "words": [[start, end, "word"], ...]}
       writes  window.SHADOW_JLPT={N3:{'<item.path>':[[s,e,'text'],...]},N2:{...},N1:{...}};
@@ -219,12 +219,13 @@ def _num(x):
     return s or '0'
 
 
-def build(items_json, words_dir, out_js, stats_json=None):
+def build(items_json, words_dir, out_js, stats_json=None, meta_json=None):
     from hashlib import sha1
     items = json.load(open(items_json, encoding='utf-8'))
-    data, stats = {}, {}
+    data, stats, meta = {}, {}, {}
     for lv, lst in items.items():
         data[lv] = {}
+        meta[lv] = {}
         st = stats[lv] = {'items': len(lst), 'transcribed': 0, 'aligned': 0, 'sentences': 0, 'sentences_aligned': 0}
         for it in lst:
             nsent = len(split_sentences(it['script']))
@@ -235,6 +236,8 @@ def build(items_json, words_dir, out_js, stats_json=None):
             w = json.load(open(f, encoding='utf-8'))
             st['transcribed'] += 1
             segs = align(it['script'], w['words'], w.get('duration'))
+            meta[lv][it['path']] = {'duration': w.get('duration'), 'model': w.get('model'), 'words': len(w['words']),
+                                    'sentences': nsent, 'aligned': len(segs)}
             if segs:
                 data[lv][it['path']] = segs
                 st['aligned'] += 1
@@ -245,11 +248,13 @@ def build(items_json, words_dir, out_js, stats_json=None):
         fo.write(to_js(data))
     if stats_json:
         json.dump(stats, open(stats_json, 'w', encoding='utf-8'), indent=1)
+    if meta_json:
+        json.dump(meta, open(meta_json, 'w', encoding='utf-8'), ensure_ascii=False, indent=0)
     print(json.dumps(stats, indent=1))
 
 
 if __name__ == '__main__':
-    if len(sys.argv) in (5, 6) and sys.argv[1] == 'build':
+    if len(sys.argv) in (5, 6, 7) and sys.argv[1] == 'build':
         build(*sys.argv[2:])
     else:
         sys.exit(__doc__)

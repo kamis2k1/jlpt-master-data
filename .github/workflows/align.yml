@@ -16,7 +16,7 @@ on:
     inputs:
       model:
         description: faster-whisper model (small / medium)
-        default: small
+        default: medium
       tag:
         description: draft release tag for the result
         default: align-v1
@@ -30,7 +30,7 @@ concurrency:
 
 env:
   PACKS: https://github.com/kamis2k1/jlpt-master-data/releases/download/v3/packs.json
-  MODEL: ${{ inputs.model || 'small' }}
+  MODEL: ${{ inputs.model || 'medium' }}
   TAG: ${{ inputs.tag || 'align-v1' }}
 
 jobs:
@@ -107,7 +107,7 @@ jobs:
           cat words/*/_shard*.json || true
           n=$(find words -name '[0-9a-f]*.json' | wc -l); echo "$n transcripts"
           test "$n" -gt 0 || { echo "no transcripts - every transcribe job failed"; exit 1; }
-          python tools/align/align.py build tools/align/items.json words shadow_jlpt.js align-stats.json
+          python tools/align/align.py build tools/align/items.json words shadow_jlpt.js align-stats.json align-meta.json
           node -e "global.window={};require('./shadow_jlpt.js');const S=window.SHADOW_JLPT;console.log(Object.keys(S).map(l=>l+':'+Object.keys(S[l]).length).join(' '))"
           ls -la shadow_jlpt.js
 
@@ -117,6 +117,7 @@ jobs:
           path: |
             shadow_jlpt.js
             align-stats.json
+            align-meta.json
 
       - name: Upload to draft release ${{ env.TAG }}
         run: |
@@ -125,4 +126,5 @@ jobs:
             gh release create "$TAG" --draft --title "Shadowing timestamps $TAG" \
               --notes "Sentence timestamps for the JLPT listening audio (faster-whisper $MODEL + script alignment)."
           fi
-          gh release upload "$TAG" align-stats.json shadow_jlpt.js --clobber
+          gh release upload "$TAG" align-stats.json align-meta.json --clobber
+          gh release upload "$TAG" shadow_jlpt.js --clobber   # last: its update time marks a finished run
