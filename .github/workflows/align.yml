@@ -1,0 +1,126 @@
+# Sentence timestamps for the JLPT listening audio (shadowing feature of the app).
+# Every listening item with a script (tools/align/items.json, extracted from the app data files) is decrypted
+# from the encrypted v3 packs (secrets N1_ENC_KEY / N1_ENC_SALT, see tools/repack-encrypt.py), transcribed
+# with faster-whisper (CPU, word timestamps) and the script sentences are aligned to the recognised words
+# (tools/align/align.py). Result: shadow_jlpt.js
+#   window.SHADOW_JLPT={N3:{'<item.path>':[[start,end,'sentence'],...]},N2:{...},N1:{...}}
+# uploaded to the DRAFT release align-v1 (release v3 is not touched) and kept as a workflow artifact.
+# Start it by pushing a change to tools/go-align.
+name: Align listening scripts
+
+on:
+  push:
+    branches: [main]
+    paths: ['tools/go-align']
+  workflow_dispatch:
+    inputs:
+      model:
+        description: faster-whisper model (small / medium)
+        default: small
+      tag:
+        description: draft release tag for the result
+        default: align-v1
+
+permissions:
+  contents: write
+
+concurrency:
+  group: align
+  cancel-in-progress: false
+
+env:
+  PACKS: https://github.com/kamis2k1/jlpt-master-data/releases/download/v3/packs.json
+  MODEL: ${{ inputs.model || 'small' }}
+  TAG: ${{ inputs.tag || 'align-v1' }}
+
+jobs:
+  transcribe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    strategy:
+      fail-fast: false
+      matrix:
+        level: [N3, N2, N1]
+        shard: [0, 1, 2, 3, 4, 5]
+    env:
+      NSHARDS: 6
+      N1_ENC_KEY: ${{ secrets.N1_ENC_KEY }}
+      N1_ENC_SALT: ${{ secrets.N1_ENC_SALT }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Check secrets, install
+        run: |
+          test ${#N1_ENC_KEY} -eq 64 || { echo "secret N1_ENC_KEY missing or not 64 hex chars"; exit 1; }
+          test ${#N1_ENC_SALT} -eq 32 || { echo "secret N1_ENC_SALT missing or not 32 hex chars"; exit 1; }
+          pip install faster-whisper pykakasi cryptography
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: whisper-${{ env.MODEL }}
+
+      - name: Transcribe ${{ matrix.level }} shard ${{ matrix.shard }}
+        run: |
+          set -euo pipefail
+          curl -fsSL "$PACKS" -o packs.json
+          python tools/align/transcribe.py ${{ matrix.level }} ${{ matrix.shard }} $NSHARDS \
+            tools/align/items.json packs.json words "$MODEL"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: words-${{ matrix.level }}-${{ matrix.shard }}
+          path: words/
+          retention-days: 30
+
+  align:
+    needs: transcribe
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - run: pip install pykakasi
+
+      - name: Unit test of the alignment
+        run: python tools/align/test_align.py
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: words-*
+          path: words
+          merge-multiple: true
+
+      - name: Align and build shadow_jlpt.js
+        run: |
+          set -euo pipefail
+          cat words/*/_shard*.json || true
+          python tools/align/align.py build tools/align/items.json words shadow_jlpt.js align-stats.json
+          node -e "global.window={};require('./shadow_jlpt.js');const S=window.SHADOW_JLPT;console.log(Object.keys(S).map(l=>l+':'+Object.keys(S[l]).length).join(' '))"
+          ls -la shadow_jlpt.js
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shadow_jlpt
+          path: |
+            shadow_jlpt.js
+            align-stats.json
+
+      - name: Upload to draft release ${{ env.TAG }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --draft --title "Shadowing timestamps $TAG" \
+              --notes "Sentence timestamps for the JLPT listening audio (faster-whisper $MODEL + script alignment)."
+          fi
+          gh release upload "$TAG" align-stats.json shadow_jlpt.js --clobber
