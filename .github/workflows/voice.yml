@@ -1,0 +1,268 @@
+# VOICEVOX voice packs (VOICE-CONTRACT.md in the app work notes).
+# Every string the app speaks (tools/tts/sentences/<LV>.json, made by tools/tts/extract.js from the app www/)
+# is synthesised with 6 VOICEVOX voices, converted to Ogg Opus 24 kbps mono, packed per (voice, level) as
+# voice/<voiceId>/<key>.ogg + voice/<voiceId>/<LV>.json, encrypted like the v3 packs (tools/repack-encrypt.py,
+# secrets N1_ENC_KEY / N1_ENC_SALT) and uploaded to release voice-v1 with voice-packs.json and plaintext
+# samples sample_<voiceId>.ogg. The release is published (not "latest": the app reads releases/latest/packs.json
+# = v3) when all 24 packs are there.
+# Start it by pushing a change to tools/go-voice, or from the Actions tab (optional voice / level filters).
+name: Voice packs
+
+on:
+  push:
+    branches: [main]
+    paths: ['tools/go-voice']
+  workflow_dispatch:
+    inputs:
+      voices:
+        description: voice ids (comma separated)
+        default: f2,f3,f4,m5,m7,m8
+      levels:
+        description: levels (comma separated)
+        default: N1,N2,N3,K
+      engines:
+        description: VOICEVOX engines per job
+        default: '4'
+      threads:
+        description: CPU threads per engine (empty = engine default)
+        default: '1'
+      chunk_weight:
+        description: text weight per job (characters + 12 per clip)
+        default: '100000'
+      limit:
+        description: smoke test only - clips per job (packs stay incomplete, release is not published)
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: voice
+  cancel-in-progress: false
+
+env:
+  TAG: voice-v1
+  VOICES: ${{ inputs.voices || 'f2,f3,f4,m5,m7,m8' }}
+  LEVELS: ${{ inputs.levels || 'N1,N2,N3,K' }}
+  ENGINES: ${{ inputs.engines || '4' }}
+  THREADS: ${{ inputs.threads || '1' }}
+  CHUNK_WEIGHT: ${{ inputs.chunk_weight || '100000' }}
+  SYNTH_LIMIT: ${{ inputs.limit || '' }}
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+      packs: ${{ steps.m.outputs.packs }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Key parity JS / Python and sentence files
+        run: |
+          set -euo pipefail
+          python3 - <<'EOF'
+          import json
+          raw = []
+          for lv in ['N1', 'N2', 'N3', 'K']:
+              raw += [x['t'] for x in json.load(open(f'tools/tts/sentences/{lv}.json'))]
+          json.dump(raw, open('/tmp/raw.json', 'w'), ensure_ascii=False)
+          EOF
+          node tools/tts/test_key.js /tmp/raw.json 1000
+      - name: Matrix
+        id: m
+        run: |
+          python3 - <<'EOF' >> "$GITHUB_OUTPUT"
+          import json, math, os, re, sys
+          sys.path.insert(0, 'tools/tts')
+          from textkey import norm
+          RB = re.compile(r'\{([^|{}]+)\|([^{}]+)\}')
+          voices = [v.strip() for v in os.environ['VOICES'].split(',') if v.strip()]
+          levels = [v.strip() for v in os.environ['LEVELS'].split(',') if v.strip()]
+          W = int(os.environ['CHUNK_WEIGHT'])
+          inc, packs = [], []
+          for lv in levels:
+              ts = {x['t'] for x in json.load(open(f'tools/tts/sentences/{lv}.json'))}
+              w = sum(len(norm(RB.sub(r'\2', t))) + 12 for t in ts)
+              n = max(1, math.ceil(w / W))
+              print(f'{lv}: {len(ts)} clips weight {w} -> {n} chunks', file=sys.stderr)
+              for v in voices:
+                  packs.append({'voice': v, 'level': lv})
+                  inc += [{'voice': v, 'level': lv, 'chunk': i, 'n': n} for i in range(n)]
+          # biggest levels first so the long jobs start early
+          print('matrix=' + json.dumps({'include': inc}))
+          print('packs=' + json.dumps({'include': packs}))
+          print(len(inc), 'synth jobs', file=sys.stderr)
+          EOF
+      - name: Draft release
+        run: |
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --draft --latest=false --title "Giọng đọc VOICEVOX $TAG" \
+              --notes "Gói giọng đọc cho app JLPT Master (chỉ dùng được trong app). Giọng đọc: VOICEVOX:春日部つむぎ, VOICEVOX:冥鳴ひまり, VOICEVOX:No.7, VOICEVOX:青山龍星, VOICEVOX:剣崎雌雄, VOICEVOX:雀松朱司"
+          fi
+
+  synth:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    name: synth ${{ matrix.voice }} ${{ matrix.level }} ${{ matrix.chunk }}/${{ matrix.n }}
+    steps:
+      - uses: actions/checkout@v5
+      - run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg
+      - name: Engines
+        id: eng
+        run: echo "urls=$(tools/tts/engines.sh "$ENGINES" "$THREADS" | tail -1)" >> "$GITHUB_OUTPUT"
+      - name: Synthesise
+        run: |
+          python3 tools/tts/synth.py tools/tts/sentences/${{ matrix.level }}.json ${{ matrix.voice }} \
+            ${{ matrix.chunk }} ${{ matrix.n }} out '${{ steps.eng.outputs.urls }}'
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: clips-${{ matrix.voice }}-${{ matrix.level }}-${{ matrix.chunk }}
+          path: |
+            out/*.ogg
+            out/_chunk*.json
+          retention-days: 10
+          compression-level: 0
+
+  pack:
+    needs: [plan, synth]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix: ${{ fromJSON(needs.plan.outputs.packs) }}
+    name: pack ${{ matrix.voice }} ${{ matrix.level }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      N1_ENC_KEY: ${{ secrets.N1_ENC_KEY }}
+      N1_ENC_SALT: ${{ secrets.N1_ENC_SALT }}
+      V: ${{ matrix.voice }}
+      LV: ${{ matrix.level }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check secrets, install
+        run: |
+          test ${#N1_ENC_KEY} -eq 64 || { echo "secret N1_ENC_KEY missing or not 64 hex chars"; exit 1; }
+          test ${#N1_ENC_SALT} -eq 32 || { echo "secret N1_ENC_SALT missing or not 32 hex chars"; exit 1; }
+          pip install -q cryptography
+          sudo apt-get update -q && sudo apt-get install -y -q ffmpeg
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: clips-${{ matrix.voice }}-${{ matrix.level }}-*
+          path: clips
+          merge-multiple: true
+      - name: Build, encrypt, check, upload
+        run: |
+          set -euo pipefail
+          ls clips | wc -l
+          python3 - <<'EOF'
+          import glob, json
+          sk = []
+          for f in sorted(glob.glob('clips/_chunk*.json')):
+              d = json.load(open(f)); sk += d['skipped']; print(f, d['ok'], 'ok', len(d['skipped']), 'skipped', d['sec'], 's')
+          json.dump(sk, open('skipped.json', 'w'), ensure_ascii=False, indent=0)
+          EOF
+          name="voice-$V-$LV.zip"
+          info=$(python3 tools/tts/pack.py build "$V" "$LV" "tools/tts/sentences/$LV.json" clips plain.zip)
+          echo "$info"
+          rm -rf clips
+          enc=$(python3 tools/repack-encrypt.py encrypt plain.zip "$name")
+          echo "$enc"
+          rm -f plain.zip
+          python3 tools/tts/pack.py check "$name" "$V" "$LV" 20
+          gh release upload "$TAG" "$name" --clobber
+          base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
+          python3 - "$name" "$base" "$info" "$enc" <<'EOF'
+          import json, os, sys
+          name, base, info, enc = sys.argv[1], sys.argv[2], json.loads(sys.argv[3]), json.loads(sys.argv[4])
+          labels = {'f2': 'Giọng nữ 1 (Tsumugi)', 'f3': 'Giọng nữ 2 (Himari)', 'f4': 'Giọng nữ 3 (No.7)',
+                    'm5': 'Giọng nam 1 (Ryusei)', 'm7': 'Giọng nam 2 (Mesuo)', 'm8': 'Giọng nam 3 (Akashi)'}
+          v, lv, tag = os.environ['V'], os.environ['LV'], os.environ['TAG']
+          lvn = 'Kaiwa' if lv == 'K' else lv
+          e = {'name': name, 'level': lv, 'kind': 'voice', 'title': f'{lvn} – {labels[v]}',
+               'size': enc['size'], 'sha256': enc['sha256'], 'url': f'{base}/{name}', 'ver': tag, 'files': enc['files'], 'enc': 1,
+               'voice': v, 'label': labels[v], 'bytes': enc['size'], 'count': info['count']}
+          os.makedirs('entry', exist_ok=True)
+          json.dump(e, open(f'entry/{v}-{lv}.json', 'w'), ensure_ascii=False)
+          print(json.dumps(e, ensure_ascii=False))
+          EOF
+          cp skipped.json "entry/skipped-$V-$LV.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: entry-${{ matrix.voice }}-${{ matrix.level }}
+          path: entry/
+
+  publish:
+    needs: pack
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+      - run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: entry-*
+          path: entry
+          merge-multiple: true
+      - name: Samples
+        run: |
+          set -euo pipefail
+          urls=$(tools/tts/engines.sh 1 | tail -1)
+          printf '[{"k":"sample","t":"こんにちは。日本語の勉強、一緒に頑張りましょう。"}]' > sample.json
+          mkdir -p samples
+          for v in f2 f3 f4 m5 m7 m8; do
+            python3 tools/tts/synth.py sample.json "$v" 0 1 "s_$v" "$urls"
+            cp "s_$v/sample.ogg" "samples/sample_$v.ogg"
+          done
+          ls -la samples
+      - name: voice-packs.json (merged with the one already on the release)
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" -p voice-packs.json -O old.json 2>/dev/null || echo '{"packs":[]}' > old.json
+          python3 - <<'EOF'
+          import glob, json, os
+          tag = os.environ['TAG']
+          by = {p['name']: p for p in json.load(open('old.json')).get('packs', [])}
+          for f in glob.glob('entry/[a-z]*-*.json'):
+              if os.path.basename(f).startswith('skipped-'):
+                  continue
+              e = json.load(open(f)); by[e['name']] = e
+          order = {v: i for i, v in enumerate(['f2', 'f3', 'f4', 'm5', 'm7', 'm8'])}
+          lvo = {'N3': 0, 'N2': 1, 'N1': 2, 'K': 3}
+          packs = sorted(by.values(), key=lambda p: (lvo.get(p['level'], 9), order.get(p['voice'], 9)))
+          json.dump({'version': tag, 'enc': 1, 'packs': packs}, open('voice-packs.json', 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
+          sk = []
+          for f in glob.glob('entry/skipped-*.json'):
+              sk += json.load(open(f))
+          json.dump(sk, open('voice-skipped.json', 'w', encoding='utf-8'), ensure_ascii=False, indent=0)
+          print(len(packs), 'packs,', len(sk), 'skipped clips')
+          open(os.environ['GITHUB_ENV'], 'a').write(f'NPACKS={len(packs)}\n')
+          EOF
+          cat voice-packs.json | head -40
+      - name: Upload
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG" samples/*.ogg voice-skipped.json --clobber
+          gh release upload "$TAG" voice-packs.json --clobber
+      - name: Publish when complete (not latest)
+        run: |
+          set -euo pipefail
+          if [ "$NPACKS" -ge 24 ] && [ -z "$SYNTH_LIMIT" ]; then
+            gh release edit "$TAG" --draft=false --latest=false
+            gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name
+          else
+            echo "only $NPACKS packs - release stays a draft"
+          fi

@@ -43,6 +43,8 @@ def build(vid, lv, src, clips, out):
     print(json.dumps({'count': len(have), 'missing': len(missing), 'bytes': total}))
     if missing:
         print('missing keys:', ' '.join(missing[:50]), file=sys.stderr)
+    if len(missing) > 0.02 * len(keys) and not os.environ.get('SYNTH_LIMIT'):
+        sys.exit('too many missing clips: %d of %d' % (len(missing), len(keys)))
 
 
 def read_enc(zf, rel, k, s):
