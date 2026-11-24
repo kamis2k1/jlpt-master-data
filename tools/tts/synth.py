@@ -158,7 +158,7 @@ def main(a):
     print('voice', vid, 'speaker', sid, 'chunk', ci, '/', nc, ':', len(todo), 'clips', flush=True)
     t0 = time.time()
     lock = threading.Lock()
-    done = {'n': 0}
+    done = {'n': 0, 'kana': 0}
     skipped = []
     free = list(engines)
 
@@ -171,6 +171,11 @@ def main(a):
             if all(os.path.isfile(p) and os.path.getsize(p) > 0 for p in dst):
                 return
             q, used = resolve(eng, t, sid)
+            if used != RB.sub(r'\1', t):
+                with lock:
+                    done['kana'] += 1
+                    if done['kana'] <= 5:
+                        print('kana:', used[:80], flush=True)
             q.update(speedScale=1.0, prePhonemeLength=0.1, postPhonemeLength=0.1, outputSamplingRate=24000,
                      outputStereo=False)
             wav = eng.synth(q, sid)
@@ -196,9 +201,9 @@ def main(a):
         list(ex.map(work, todo))
     sec = round(time.time() - t0)
     ok = sum(len(k) for _, k in todo) - len(skipped)
-    json.dump({'ok': ok, 'skipped': skipped, 'sec': sec, 'voice': vid, 'chunk': ci},
+    json.dump({'ok': ok, 'skipped': skipped, 'sec': sec, 'voice': vid, 'chunk': ci, 'kana': done['kana']},
               open(os.path.join(out, '_chunk%d.json' % ci), 'w', encoding='utf-8'), ensure_ascii=False)
-    print('done', ok, 'files,', len(skipped), 'skipped,', sec, 's')
+    print('done', ok, 'files,', len(skipped), 'skipped,', sec, 's,', done['kana'], 'clips with kana substitution')
     for s in skipped[:20]:
         print('SKIP', s)
 
