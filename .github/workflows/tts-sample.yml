@@ -1,0 +1,31 @@
+# Đọc thử vài câu bằng các giọng VOICEVOX (để chủ app nghe và chọn giọng). Kết quả: release nháp tts-sample.
+# Chạy bằng cách sửa file tools/go-tts-sample.
+name: TTS voice samples
+on:
+  push:
+    branches: [main]
+    paths: ['tools/go-tts-sample', 'tools/tts/sample.py']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  sample:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      vv:
+        image: voicevox/voicevox_engine:cpu-latest
+        ports: ['50021:50021']
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg
+      - name: Wait for engine
+        run: for i in $(seq 1 60); do curl -sf http://127.0.0.1:50021/version && exit 0; sleep 5; done; exit 1
+      - run: mkdir -p out && python3 tools/tts/sample.py
+      - uses: actions/upload-artifact@v4
+        with: {name: tts-sample, path: out/*.mp3}
+      - name: Upload to draft release
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          gh release view tts-sample >/dev/null 2>&1 || gh release create tts-sample --draft --title "VOICEVOX samples" --notes "Giọng đọc thử"
+          gh release upload tts-sample out/*.mp3 out/speakers.json --clobber
