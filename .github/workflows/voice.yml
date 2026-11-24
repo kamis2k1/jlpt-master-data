@@ -52,6 +52,7 @@ env:
 jobs:
   plan:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     outputs:
       matrix: ${{ steps.m.outputs.matrix }}
       packs: ${{ steps.m.outputs.packs }}
@@ -113,7 +114,7 @@ jobs:
     name: synth ${{ matrix.voice }} ${{ matrix.level }} ${{ matrix.chunk }}/${{ matrix.n }}
     steps:
       - uses: actions/checkout@v5
-      - run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg
+      - run: tools/tts/ffmpeg.sh
       - name: Engines
         id: eng
         run: echo "urls=$(tools/tts/engines.sh "$ENGINES" "$THREADS" | tail -1)" >> "$GITHUB_OUTPUT"
@@ -140,6 +141,7 @@ jobs:
       max-parallel: 6
       matrix: ${{ fromJSON(needs.plan.outputs.packs) }}
     name: pack ${{ matrix.voice }} ${{ matrix.level }}
+    timeout-minutes: 60
     env:
       GH_TOKEN: ${{ github.token }}
       N1_ENC_KEY: ${{ secrets.N1_ENC_KEY }}
@@ -156,7 +158,7 @@ jobs:
           test ${#N1_ENC_KEY} -eq 64 || { echo "secret N1_ENC_KEY missing or not 64 hex chars"; exit 1; }
           test ${#N1_ENC_SALT} -eq 32 || { echo "secret N1_ENC_SALT missing or not 32 hex chars"; exit 1; }
           pip install -q cryptography
-          sudo apt-get update -q && sudo apt-get install -y -q ffmpeg
+          tools/tts/ffmpeg.sh
       - uses: actions/download-artifact@v4
         with:
           pattern: clips-${{ matrix.voice }}-${{ matrix.level }}-*
@@ -207,11 +209,12 @@ jobs:
     needs: pack
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v5
-      - run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg
+      - run: tools/tts/ffmpeg.sh
       - uses: actions/download-artifact@v4
         with:
           pattern: entry-*
