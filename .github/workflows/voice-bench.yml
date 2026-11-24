@@ -1,0 +1,33 @@
+# Speed test for voice.yml: how many VOICEVOX engines / CPU threads per runner give the most clips per second.
+# Start it by pushing a change to tools/go-voice-bench. Result only in the job log.
+name: Voice bench
+on:
+  push:
+    branches: [main]
+    paths: ['tools/go-voice-bench']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        cfg: ['1:', '2:2', '4:1', '3:']
+    steps:
+      - uses: actions/checkout@v5
+      - run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg && nproc && free -g
+      - name: Engines ${{ matrix.cfg }}
+        id: eng
+        run: |
+          n=${CFG%%:*}; th=${CFG#*:}
+          echo "urls=$(tools/tts/engines.sh $n $th | tail -1)" >> "$GITHUB_OUTPUT"
+        env: {CFG: '${{ matrix.cfg }}'}
+      - name: Synthesise 160 clips
+        env: {SYNTH_LIMIT: '160'}
+        run: |
+          python3 tools/tts/synth.py tools/tts/sentences/N1.json f2 1 4 out '${{ steps.eng.outputs.urls }}'
+          ls out | wc -l; du -sh out
+          ffprobe -v error -show_entries stream=codec_name,channels,sample_rate:format=duration,bit_rate -of compact "$(ls out/*.ogg | head -1)"
